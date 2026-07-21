@@ -1,28 +1,41 @@
-# Survey / Research Data — Import Solution
+# Survey / Research Data - Import Solution
 
-**Purpose:** How to store, map and import the client's market-research survey bundle
-(`variable_label.txt` + `value_label.txt` + `data.txt`) into the database, and how to
-connect each monthly drop back to a **Client**.
+**Purpose:** How to store, map and import the client's market-research survey data into the
+database, and how to connect each monthly drop back to a **Client**.
+
+> **About the file format (read this):** the client sends **one Excel workbook** (`.xlsx`)
+> that contains **three sheets**
+>
+> | Sheet (tab in Excel) | We call it | Role |
+> |---|---|---|
+> | **Variable Information** | the **Variable sheet** | the column dictionary (what each column means) |
+> | **Variable Values** | the **Values sheet** | the codebook (what each number means) |
+> | **Data** | the **Data sheet** | the actual answers, one row per respondent |
+>
+> **We do not know exactly how the next workbook will arrive.** Sheet names, sheet order,
+> column order, or even the delivery format (`.xlsx` vs `.csv`) may differ month to month. The
+> whole design below is deliberately built to survive that - see the defensive rules in 7.1
+> and the "Unknown columns" check in the UI (11.4.4).
 
 > This dataset is **not** mystery-shopping data (auditor scoring stores).
 > It is a **consumer opinion survey** (SPSS / Forsta-style export) with a Limbic personality
 > section. It therefore gets its **own set of tables** (`S3mVKQ_survey_*`), but it links to
-> Clients the exact same way the mystery-shopping tables do — via `wp_posts.ID` where
+> Clients the exact same way the mystery-shopping tables do - via `wp_posts.ID` where
 > `post_type = rdg-client`.
 
 ---
 
 ## 1. The core idea (read this first)
 
-The client always sends **three companion files**. None of them mean anything alone:
+The workbook has **three sheets**. None of them mean anything alone:
 
-| File | Role | Becomes table |
+| Sheet | Role | Becomes table |
 |---|---|---|
-| `variable_label.txt` | **Data dictionary** — what each *column* means (`D1` = "Are you…") + its position | `survey_question` |
-| `value_label.txt` | **Codebook** — what each *number inside a column* means (`D1`: 1 = Male) | `survey_answer_option` |
-| `data.txt` | **The answers** — one row per respondent, tab-separated, mostly numeric codes | `survey_respondent` + `survey_response` |
+| **Variable** ("Variable Information") | **Data dictionary** — what each *column* means (`D1` = "Are you…") + its position | `survey_question` |
+| **Values** ("Variable Values") | **Codebook** - what each *number inside a column* means (`D1`: 1 = Male) | `survey_answer_option` |
+| **Data** | **The answers** - one row per respondent, mostly numeric codes | `survey_respondent` + `survey_response` |
 
-The wide `data.txt` (600+ columns) is turned into a **tall / long format**:
+The wide **Data sheet** (600+ columns) is turned into a **tall / long format**:
 
 ```
 respondent_uuid | question_code | question_text | answer_code | answer_text
@@ -35,7 +48,7 @@ survives new columns being added in future waves.
 
 ## 2. How monthly data connects to a Client
 
-Every month the client sends a fresh `data.txt`. We wrap each drop in a **wave**:
+Every month the client sends a fresh **Data sheet**. We wrap each drop in a **wave**:
 
 ```
 Client (wp_posts, post_type = rdg-client)
@@ -117,13 +130,13 @@ erDiagram
 
 ## 4. Tables explained one by one
 
-### 4.1 `survey_definition` — the questionnaire
+### 4.1 `survey_definition` - the questionnaire
 The reusable questionnaire (a "version"). Import the two dictionary files into this once.
 `Client_Id` is nullable so RDG can hold a shared master template (same pattern as
 `rdg_courses`). Normally it is the owning client.
 
-### 4.2 `survey_question` — from `variable_label.txt`
-One row per **column** in `data.txt`. Stores the code (`Q5_1`), the full question text,
+### 4.2 `survey_question` - from the **Variable sheet**
+One row per **column** in the Data sheet. Stores the code (`Q5_1`), the full question text,
 which section it belongs to, its position, and a **`Data_Type`** we assign so the importer
 knows how to treat it:
 
@@ -136,21 +149,21 @@ knows how to treat it:
 | `open_text` | free text | `Q5_97_Other`, any `*_Other` |
 | `numeric` | raw number | timing / count fields |
 
-### 4.3 `survey_answer_option` — from `value_label.txt`
+### 4.3 `survey_answer_option` - from the **Values sheet**
 One row per **code → label** inside a question. `D1` → (1=Male, 2=Female, 3=Prefer not to say).
 Reserved codes are consistent industry-wide and are just normal rows here:
 `97 = Other`, `99 = None / N/A`.
 
-### 4.4 `survey_wave` — the monthly link to a Client
+### 4.4 `survey_wave` - the monthly link to a Client
 One row per Client per month. Carries `Client_Id`, `Period_Month`, `Period_Year`, and the
 uploaded file info + import status (mirrors `mystery_shopping_import_log`).
 
-### 4.5 `survey_respondent` — from the metadata columns of `data.txt`
+### 4.5 `survey_respondent` - from the metadata columns of the **Data sheet**
 One row per person per wave. The left-hand system columns map straight onto it:
 `record → Record_No`, `uuid → Uuid`, `start_date → Start_Date`, `date → End_Date`,
 `qtime → Duration_Seconds`, `status → Status_Code`, `HidSample → Sample_Type`.
 
-### 4.6 `survey_response` — the tall answers table
+### 4.6 `survey_response` - the tall answers table
 The heart of it. One row per **answered** question per respondent:
 `Answer_Code` (raw number), `Answer_Label` (decoded via `survey_answer_option`),
 `Answer_Text` (only for open-ends). **Blank cells are skipped** (blank = question not shown
@@ -160,7 +173,7 @@ by skip logic, which is *not* the same as a zero).
 
 ## 5. Column → table mapping (cheat sheet)
 
-| `data.txt` column | Goes to | Notes |
+| **Data sheet** column | Goes to | Notes |
 |---|---|---|
 | `record` | `survey_respondent.Record_No` | integer |
 | `uuid` | `survey_respondent.Uuid` | unique per wave |
@@ -176,7 +189,7 @@ by skip logic, which is *not* the same as a zero).
 
 ---
 
-## 6. The DDL — run this in the database
+## 6. The DDL - run this in the database
 
 > Uses the **exact conventions** already in the mystery-shopping schema: InnoDB,
 > `utf8mb4_unicode_ci`, and the `Client_Id` collation fix so the FK to `S3mVKQ_posts.ID`
@@ -222,7 +235,7 @@ ALTER TABLE `S3mVKQ_survey_definition`
   ON UPDATE CASCADE ON DELETE CASCADE;
 
 -- ------------------------------------------------------------------------------------
--- 2. QUESTION  (loaded from variable_label.txt)
+-- 2. QUESTION  (loaded from the Variable sheet)
 -- ------------------------------------------------------------------------------------
 DROP TABLE IF EXISTS `S3mVKQ_survey_question`;
 CREATE TABLE `S3mVKQ_survey_question` (
@@ -234,7 +247,7 @@ CREATE TABLE `S3mVKQ_survey_question` (
   `Base_Code`      VARCHAR(50)  COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Parent question, e.g. Q5 for Q5_1',
   `Data_Type`     VARCHAR(50)  COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'single_choice'
                    COMMENT 'system | single_choice | scale | multi_select_flag | open_text | numeric',
-  `Position`       INT DEFAULT NULL COMMENT 'Column position from variable_label.txt',
+  `Position`       INT DEFAULT NULL COMMENT 'Column position from the Variable sheet',
   `IsActive`       TINYINT(1) NOT NULL DEFAULT 1,
   `Created_At`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `Updated_At`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -246,10 +259,10 @@ CREATE TABLE `S3mVKQ_survey_question` (
     REFERENCES `S3mVKQ_survey_definition` (`Definition_Id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='One row per column in data.txt (the data dictionary)';
+  COMMENT='One row per column in the Data sheet (the data dictionary)';
 
 -- ------------------------------------------------------------------------------------
--- 3. ANSWER OPTION  (loaded from value_label.txt)
+-- 3. ANSWER OPTION  (loaded from the Values sheet)
 -- ------------------------------------------------------------------------------------
 DROP TABLE IF EXISTS `S3mVKQ_survey_answer_option`;
 CREATE TABLE `S3mVKQ_survey_answer_option` (
@@ -330,7 +343,7 @@ CREATE TABLE `S3mVKQ_survey_respondent` (
     REFERENCES `S3mVKQ_survey_wave` (`Wave_Id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='One survey respondent (one data.txt row) per wave';
+  COMMENT='One survey respondent (one Data-sheet row) per wave';
 
 -- ------------------------------------------------------------------------------------
 -- 6. RESPONSE  (the tall answers table)
@@ -340,7 +353,7 @@ CREATE TABLE `S3mVKQ_survey_response` (
   `Response_Id`   BIGINT NOT NULL AUTO_INCREMENT,
   `Respondent_Id` INT NOT NULL,
   `Question_Id`   INT NOT NULL,
-  `Answer_Code`   VARCHAR(50)  COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw code from data.txt',
+  `Answer_Code`   VARCHAR(50)  COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw code from the Data sheet',
   `Answer_Label`  VARCHAR(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'decoded via answer_option',
   `Answer_Text`   LONGTEXT     COLLATE utf8mb4_unicode_ci COMMENT 'free text (open-ends only)',
   `Created_At`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -368,34 +381,50 @@ CREATE TABLE `S3mVKQ_survey_response` (
 
 ```mermaid
 flowchart TD
-    A[Receive 3 files for a client + month] --> B[Create/verify survey_definition]
-    B --> C[Load variable_label.txt -> survey_question]
-    C --> D[Load value_label.txt -> survey_answer_option]
+    A[Receive Excel workbook for a client + month] --> B[Create/verify survey_definition]
+    B --> C[Load Variable sheet -> survey_question]
+    C --> D[Load Values sheet -> survey_answer_option]
     D --> E[Create survey_wave: Client_Id + Month + Year]
-    E --> F[Read data.txt header row -> column order]
+    E --> F[Read Data sheet header row -> column order]
     F --> G[For each respondent row -> insert survey_respondent]
     G --> H[For each non-blank answer column -> insert survey_response]
     H --> I[Update wave: Total_Respondents, status = completed]
 ```
 
-**Steps 2–4 run once per questionnaire version.** Steps 5–8 run every month.
+**Steps 2-4 run once per questionnaire version.** Steps 5-8 run every month.
 
-> **Ongoing months = Data file only.**
-> After the first setup you will **not** receive the two dictionaries again — only a fresh
-> `data.txt` (as Excel/CSV). The questionnaire is already stored in `survey_definition` /
-> `survey_question` / `survey_answer_option`, so each month you only do: **create a new
-> `survey_wave`** → **load the respondents + responses**. The importer reuses the existing
-> dictionaries to decode the new file. Only re-run steps 2–4 if the client changes the
-> questionnaire (new/renamed columns or codes) — in that case bump the `Version` on a new
+> **Ongoing months = Data sheet only.**
+> After the first setup you will **not** receive the two dictionary sheets again - only a fresh
+> workbook whose **Data sheet** matters. The questionnaire is already stored in
+> `survey_definition` / `survey_question` / `survey_answer_option`, so each month you only do:
+> **create a new `survey_wave`** → **load the respondents + responses**. The importer reuses the
+> existing dictionaries to decode the new file. Only re-run steps 2–4 if the client changes the
+> questionnaire (new/renamed columns or codes) - in that case bump the `Version` on a new
 > `survey_definition` row so old waves keep decoding correctly.
 
 ### 7.1 Parsing rules the importer must follow
 
-- **All files are TAB-delimited.** Split on `\t`, not comma. Handle quoted multi-line cells
-  in `data.txt` (open-ends contain line breaks) — the project already has this logic in
+> **The workbook is Excel (`.xlsx`).** Read it with the project's existing PhpSpreadsheet
+> converter (the same one the current import uses) to pull each **sheet** out — do **not**
+> assume plain text. If a month ever arrives as `.csv`, treat each file as one sheet.
+
+**Because we do not know the exact layout next month, the importer must be defensive:**
+
+- **Find sheets by name/content, not by position.** Locate the Variable, Values and Data
+  sheets by looking at their header row (e.g. a sheet whose header is `Variable / Position /
+  Label` is the Variable sheet), not by "sheet 1, 2, 3". Sheet order may change.
+- **Match columns by their CODE, never by column index.** Map `D1`, `Q5_1`, etc. using the
+  header names in the Data sheet against `survey_question.Question_Code`. If the client adds,
+  removes or reorders columns, code-matching still works; index-matching would silently
+  corrupt the data.
+- **Flag anything unknown.** Any Data-sheet column that has no matching `survey_question` is
+  reported as an "Unknown column" (see §11.4.4) — that is the signal the questionnaire changed
+  and a new `Version` is needed. Never guess.
+- **The Values sheet uses continuation rows:** a row whose **first column is blank** belongs
+  to the variable named on the row above. Track a "current variable" while reading it.
+- **Handle quoted / multi-line cells** in the Data sheet (open-ends contain line breaks) — the
+  project already has this logic in
   [assets/js/import_js/excel-parser.js](../assets/js/import_js/excel-parser.js).
-- **`value_label.txt` uses continuation lines:** a line whose **first column is blank**
-  belongs to the variable named on the line above. Track a "current variable" while parsing.
 - **Blank data cell = skip** (question not shown by skip logic). Do **not** insert a row.
 - **`qtime` `H:MM:SS` → seconds**; **`DD/MM/YYYY HH:MM` → MySQL `DATETIME`**.
 - **Open-ends** (`*_Other`) → `Answer_Text`; leave `Answer_Code` NULL.
@@ -412,7 +441,7 @@ flowchart TD
  * @param int    $definition_id  existing survey_definition (dictionaries already loaded)
  * @param int    $month          1-12
  * @param int    $year           e.g. 2026
- * @param string $data_file      absolute path to data.txt
+ * @param string $data_file      absolute path to the Data sheet (CSV extracted from the workbook)
  */
 function rdg_import_survey_wave($client_id, $definition_id, $month, $year, $data_file) {
     global $wpdb;
@@ -528,7 +557,7 @@ function rdg_survey_hms_to_sec($s) {               // "0:09:10" -> 550
 ### 7.3 Loading the two dictionaries (run once per version)
 
 ```php
-// variable_label.txt -> survey_question   (skip the 2 header lines)
+// Variable sheet -> survey_question   (skip the 2 header lines)
 // columns: Variable \t Position \t Label
 foreach ($variable_rows as [$code, $position, $label]) {
     $wpdb->insert("{$p}survey_question", [
@@ -542,7 +571,7 @@ foreach ($variable_rows as [$code, $position, $label]) {
     ]);
 }
 
-// value_label.txt -> survey_answer_option  (mind the continuation lines!)
+// Values sheet -> survey_answer_option  (mind the continuation lines!)
 $current_code = null;
 foreach ($value_rows as [$col1, $value, $label]) {
     if (trim($col1) !== '') {                 // new variable starts
@@ -594,11 +623,13 @@ ORDER  BY q.Position;
 
 ## 9. Summary — what to tell your junior
 
-1. It's a **standard 3-file survey export**: data + column dictionary + value codebook.
+1. It's a **standard 3-sheet survey export** (one Excel workbook): Data + column dictionary +
+   value codebook.
 2. We store it in **6 tables** (`survey_definition`, `survey_question`, `survey_answer_option`,
    `survey_wave`, `survey_respondent`, `survey_response`) — separate from mystery shopping.
 3. The **dictionaries load once**; each month you create **one `survey_wave`** for the
-   `Client + month`, then flatten `data.txt` into `survey_respondent` + `survey_response`.
+   `Client + month`, then flatten the **Data sheet** into `survey_respondent` +
+   `survey_response`.
 4. The **client + month link is the `survey_wave` row** — that's the whole trick.
 5. **Blank ≠ 0** (skip blanks), decode codes via the codebook, put open-ends in `Answer_Text`.
 
@@ -610,7 +641,7 @@ ORDER  BY q.Position;
 
 ## 10. What the tables look like after import (worked example)
 
-Below are **real values decoded from the first rows of `data.txt`**, showing exactly what
+Below are **real values decoded from the first rows of the Data sheet**, showing exactly what
 lands in each table after one import. (Client `123` is used as an example `wp_posts.ID`.)
 
 ### 10.1 `survey_definition` — loaded once at setup
@@ -619,7 +650,7 @@ lands in each table after one import. (Client `123` is used as an example `wp_po
 |---|---|---|---|---|
 | 1 | 123 | Plus-Size Fashion Study | v1 | 1 |
 
-### 10.2 `survey_question` — loaded once from `variable_label.txt`
+### 10.2 `survey_question` — loaded once from the **Variable sheet**
 
 | Question_Id | Definition_Id | Question_Code | Question_Label | Section | Base_Code | Data_Type | Position |
 |---|---|---|---|---|---|---|---|
@@ -634,7 +665,7 @@ lands in each table after one import. (Client `123` is used as an example `wp_po
 | 54 | 1 | Q5_3 | Where do you follow fashion & style? — TikTok | Q5 | Q5 | multi_select_flag | 54 |
 | 61 | 1 | Q5_10| Where do you follow fashion & style? — Seeing other people wearing it | Q5 | Q5 | multi_select_flag | 61 |
 
-### 10.3 `survey_answer_option` — loaded once from `value_label.txt`
+### 10.3 `survey_answer_option` — loaded once from the **Values sheet**
 
 | Option_Id | Question_Id | Value_Code | Value_Label |
 |---|---|---|---|
@@ -654,9 +685,9 @@ lands in each table after one import. (Client `123` is used as an example `wp_po
 
 | Wave_Id | Client_Id | Definition_Id | Wave_Name | Period_Month | Period_Year | Period_Date | File_Name | Total_Respondents | Import_Status |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 123 | 1 | June 2026 | 6 | 2026 | 2026-06-01 | data.txt | 62 | completed |
+| 1 | 123 | 1 | June 2026 | 6 | 2026 | 2026-06-01 | survey_June2026.xlsx | 62 | completed |
 
-### 10.5 `survey_respondent` — one row per `data.txt` row
+### 10.5 `survey_respondent` — one row per Data-sheet row
 
 | Respondent_Id | Wave_Id | Uuid | Record_No | Status_Code | Sample_Type | Start_Date | End_Date | Duration_Seconds |
 |---|---|---|---|---|---|---|---|---|
@@ -756,11 +787,11 @@ the foreign keys will reject the insert:
 | Order | Table | Filled from | When |
 |---|---|---|---|
 | 1 | `survey_definition` | you (name the questionnaire + pick client) | **once** |
-| 2 | `survey_question` | `variable_label.txt` | **once** |
-| 3 | `survey_answer_option` | `value_label.txt` | **once** |
+| 2 | `survey_question` | the **Variable sheet** | **once** |
+| 3 | `survey_answer_option` | the **Values sheet** | **once** |
 | 4 | `survey_wave` | you (pick client + month) | **every month** |
-| 5 | `survey_respondent` | `data.txt` (the metadata columns) | **every month** |
-| 6 | `survey_response` | `data.txt` (the answer columns) | **every month** |
+| 5 | `survey_respondent` | the **Data sheet** (the metadata columns) | **every month** |
+| 6 | `survey_response` | the **Data sheet** (the answer columns) | **every month** |
 
 ### 11.3 One-time setup vs the monthly job
 
@@ -818,12 +849,12 @@ flows from it. Nothing is typed by hand, so there are no spelling mistakes and n
 
 #### 11.4.2 Tab 1 — Variable Labels (build the question list)
 
-Purpose: turn `variable_label.txt` into `survey_question` rows.
+Purpose: turn the **Variable sheet** into `survey_question` rows.
 
 ```
 ┌─ 1 · Variable Labels ──────────────────────────────────────────────┐
 │  Questionnaire name: [ Plus-Size Fashion Study        ]  Version: [v1]
-│  Upload variable_label.txt:  [ Choose file ]  [ Preview ]           │
+│  Upload workbook → pick “Variable” sheet:  [ Choose file ]  [ Preview ]
 │                                                                     │
 │  Preview / edit before saving:                                      │
 │  ┌────────┬───────────────────────────────┬─────────────┬────────┐ │
@@ -841,19 +872,19 @@ Purpose: turn `variable_label.txt` into `survey_question` rows.
 What the developer does here:
 1. Type the questionnaire **name + version** → this creates the `survey_definition` row
    (with the selected `Client_Id`).
-2. Upload the variable-label file. The screen shows every column as a row.
+2. Upload the workbook and pick the **Variable** sheet. The screen shows every column as a row.
 3. The system **pre-fills `Section` and `Data_Type`** automatically (rules in §11.5 and
    §11.6); the developer just eyeballs and corrects any oddities in the two dropdowns.
 4. Save → writes all `survey_question` rows.
 
 #### 11.4.3 Tab 2 — Value Labels (attach the code→text meanings)
 
-Purpose: turn `value_label.txt` into `survey_answer_option` rows, **matched to the questions
-saved in Tab 1**.
+Purpose: turn the **Values sheet** into `survey_answer_option` rows, **matched to the
+questions saved in Tab 1**.
 
 ```
 ┌─ 2 · Value Labels ─────────────────────────────────────────────────┐
-│  Upload value_label.txt:  [ Choose file ]  [ Match ]                │
+│  Upload workbook → pick “Values” sheet:  [ Choose file ]  [ Match ] │
 │                                                                     │
 │  Matched preview (grouped by question):                             │
 │  ▸ D1  Are you…            1=Male  2=Female  3=Prefer not to say ✅   │
@@ -866,7 +897,7 @@ saved in Tab 1**.
 ```
 
 What the developer does here:
-1. Upload the value-label file.
+1. Upload the workbook and pick the **Values** sheet.
 2. The system reads it (remembering the **continuation-line rule** — a blank first column
    means "same question as the line above") and **matches each block to a question by its
    code**.
@@ -902,10 +933,11 @@ data file.
 
 What the developer/operator does here every month:
 1. Pick **client** (top) + **month/year**.
-2. Upload the data file (it may arrive as `.xlsx` — the existing PHP converter turns it into
-   CSV first, exactly like the current import flow).
+2. Upload the month's **workbook** and pick the **Data** sheet (the existing PhpSpreadsheet
+   converter reads the sheet, exactly like the current import flow — if it ever arrives as
+   `.csv`, that single file is the Data sheet).
 3. The preview **decodes the first few rows** using the stored dictionaries so you can catch a
-   wrong file before importing. If a column in the file isn't in the dictionary it's flagged
+   wrong file before importing. If a column in the sheet isn't in the dictionary it's flagged
    under "Unknown columns" (that signals the questionnaire changed → make a new version).
 4. Click **Import** → creates the `survey_wave` and loads `survey_respondent` +
    `survey_response`. A success line confirms counts.
@@ -913,7 +945,7 @@ What the developer/operator does here every month:
 ### 11.5 How the sections separate (the `VAR_TIME_x` columns)
 
 The client's file is not one flat list — it is divided into **sections**, and the dividers are
-the `VAR_TIME_1 … VAR_TIME_7` columns. In the variable-label file each one is literally named
+the `VAR_TIME_1 … VAR_TIME_7` columns. In the **Variable sheet** each one is literally named
 after the section it opens, e.g. *"VAR_TIME_1 – Screening"*, *"VAR_TIME_2 – Limbic Profiling"*.
 
 How we handle it (in Tab 1, automatically):
