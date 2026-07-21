@@ -380,6 +380,15 @@ flowchart TD
 
 **Steps 2–4 run once per questionnaire version.** Steps 5–8 run every month.
 
+> **Ongoing months = Data file only.**
+> After the first setup you will **not** receive the two dictionaries again — only a fresh
+> `data.txt` (as Excel/CSV). The questionnaire is already stored in `survey_definition` /
+> `survey_question` / `survey_answer_option`, so each month you only do: **create a new
+> `survey_wave`** → **load the respondents + responses**. The importer reuses the existing
+> dictionaries to decode the new file. Only re-run steps 2–4 if the client changes the
+> questionnaire (new/renamed columns or codes) — in that case bump the `Version` on a new
+> `survey_definition` row so old waves keep decoding correctly.
+
 ### 7.1 Parsing rules the importer must follow
 
 - **All files are TAB-delimited.** Split on `\t`, not comma. Handle quoted multi-line cells
@@ -596,4 +605,114 @@ ORDER  BY q.Position;
 > **Before running in production:** confirm with the project owner whether the Limbic section
 > (`L1/L2/L3_*`) should also cross-link to the existing ACF **Limbic Profile** records. If yes,
 > add a nullable `Limbic_Profile_Post_Id` to `survey_respondent` and map it after import.
+
+---
+
+## 10. What the tables look like after import (worked example)
+
+Below are **real values decoded from the first rows of `data.txt`**, showing exactly what
+lands in each table after one import. (Client `123` is used as an example `wp_posts.ID`.)
+
+### 10.1 `survey_definition` — loaded once at setup
+
+| Definition_Id | Client_Id | Name | Version | IsActive |
+|---|---|---|---|---|
+| 1 | 123 | Plus-Size Fashion Study | v1 | 1 |
+
+### 10.2 `survey_question` — loaded once from `variable_label.txt`
+
+| Question_Id | Definition_Id | Question_Code | Question_Label | Section | Base_Code | Data_Type | Position |
+|---|---|---|---|---|---|---|---|
+| 8  | 1 | D1   | Are you… | Demographics | D1 | single_choice | 8 |
+| 9  | 1 | D2   | What is your age? | Demographics | D2 | single_choice | 9 |
+| 10 | 1 | D3   | In which state do you live? | Demographics | D3 | single_choice | 10 |
+| 12 | 1 | D5   | What Australian clothing size do you buy most often for yourself? | Demographics | D5 | single_choice | 12 |
+| 14 | 1 | L1   | 7 sets of words — attitude to life you find most appealing | Limbic | L1 | single_choice | 14 |
+| 15 | 1 | L2   | Most important term that describes you best | Limbic | L2 | single_choice | 15 |
+| 22 | 1 | L3_7 | 5 additional terms — Risk-taking | Limbic | L3 | multi_select_flag | 22 |
+| 45 | 1 | Q1   | How frequently do you shop for clothes? | Q1 | Q1 | single_choice | 45 |
+| 54 | 1 | Q5_3 | Where do you follow fashion & style? — TikTok | Q5 | Q5 | multi_select_flag | 54 |
+| 61 | 1 | Q5_10| Where do you follow fashion & style? — Seeing other people wearing it | Q5 | Q5 | multi_select_flag | 61 |
+
+### 10.3 `survey_answer_option` — loaded once from `value_label.txt`
+
+| Option_Id | Question_Id | Value_Code | Value_Label |
+|---|---|---|---|
+| 101 | 8  | 1 | Male |
+| 102 | 8  | 2 | Female |
+| 103 | 8  | 3 | Prefer not to say |
+| 120 | 12 | 2 | 8 |
+| 140 | 14 | 4 | Openness, love of life, imagination, easy-going |
+| 155 | 15 | 3 | Disciplined |
+| 220 | 22 | 0 | Not Selected |
+| 221 | 22 | 1 | Selected |
+| 245 | 45 | 3 | About every 6 months |
+| 540 | 54 | 1 | Selected |
+| 610 | 61 | 1 | Selected |
+
+### 10.4 `survey_wave` — one new row **each month**
+
+| Wave_Id | Client_Id | Definition_Id | Wave_Name | Period_Month | Period_Year | Period_Date | File_Name | Total_Respondents | Import_Status |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 123 | 1 | June 2026 | 6 | 2026 | 2026-06-01 | data.txt | 62 | completed |
+
+### 10.5 `survey_respondent` — one row per `data.txt` row
+
+| Respondent_Id | Wave_Id | Uuid | Record_No | Status_Code | Sample_Type | Start_Date | End_Date | Duration_Seconds |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | zte5ru2dj1eej0xu | 1 | 3 | 1 | 2026-06-22 21:14:00 | 2026-06-22 21:21:00 | 424 |
+| 2 | 1 | 4scy3dffkn7z1tec | 2 | 3 | 1 | 2026-06-22 21:17:00 | 2026-06-22 21:27:00 | 550 |
+
+> `qtime` `0:07:04` → **424** seconds; `0:09:10` → **550** seconds.
+> `status = 3` = Qualified, `HidSample = 1` = Panel-Sample (kept as raw code + decoded on read).
+
+### 10.6 `survey_response` — the tall answers (respondent 1 = uuid `zte5ru2dj1eej0xu`)
+
+Raw row 1 reads `… D1=2  D2=2  D3=7  D5=2 … L1=4  L2=3 … Q1=3 …` — here it is decoded:
+
+| Response_Id | Respondent_Id | Question_Id | Question_Code | Answer_Code | Answer_Label | Answer_Text |
+|---|---|---|---|---|---|---|
+| 1 | 1 | 8  | D1    | 2 | Female | NULL |
+| 2 | 1 | 9  | D2    | 2 | 18-24 years | NULL |
+| 3 | 1 | 10 | D3    | 7 | Victoria | NULL |
+| 4 | 1 | 12 | D5    | 2 | 8 | NULL |
+| 5 | 1 | 14 | L1    | 4 | Openness, love of life, imagination, easy-going | NULL |
+| 6 | 1 | 15 | L2    | 3 | Disciplined | NULL |
+| 7 | 1 | 45 | Q1    | 3 | About every 6 months | NULL |
+| 8 | 1 | 22 | L3_7  | 1 | Selected | NULL |
+| 9 | 1 | 54 | Q5_3  | 1 | Selected | NULL |
+| 10| 1 | 61 | Q5_10 | 1 | Selected | NULL |
+
+Notes on this respondent:
+- **Blanks are skipped.** In row 1, `L3_3` is empty (not shown) → **no row** is created for it.
+- **Multi-select** questions (`L3_*`, `Q5_*`) only produce rows where the flag = `1`
+  (Selected). She picked 5 Limbic terms — Risk-taking, Dependable, Imaginative, Nostalgic,
+  Sensible — and follows fashion via TikTok + "seeing other people wearing it".
+- **Open-ends** (e.g. `Q16_97_Other`) would fill `Answer_Text` with `Answer_Code`/`Answer_Label`
+  left NULL. Row 1 has a brand name (`Kmart`) in an open-end field → stored as `Answer_Text`.
+
+### 10.7 How it reads back (the join that produces a human report)
+
+```sql
+SELECT p.Uuid, q.Question_Code,
+       COALESCE(r.Answer_Text, r.Answer_Label) AS answer
+FROM   S3mVKQ_survey_response  r
+JOIN   S3mVKQ_survey_respondent p ON p.Respondent_Id = r.Respondent_Id
+JOIN   S3mVKQ_survey_question   q ON q.Question_Id   = r.Question_Id
+WHERE  p.Uuid = 'zte5ru2dj1eej0xu'
+ORDER  BY q.Position;
+```
+
+| Uuid | Question_Code | answer |
+|---|---|---|
+| zte5ru2dj1eej0xu | D1 | Female |
+| zte5ru2dj1eej0xu | D2 | 18-24 years |
+| zte5ru2dj1eej0xu | D3 | Victoria |
+| zte5ru2dj1eej0xu | D5 | 8 |
+| zte5ru2dj1eej0xu | L1 | Openness, love of life, imagination, easy-going |
+| zte5ru2dj1eej0xu | L2 | Disciplined |
+| zte5ru2dj1eej0xu | Q1 | About every 6 months |
+
+That is the whole point of the design: the client sends coded numbers, but any report reads
+back in plain English — for **any client, any month** — just by filtering on the `survey_wave`.
 ```
