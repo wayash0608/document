@@ -22,10 +22,16 @@ The admin-supplied spreadsheet has these columns:
 
 | No. | Category | Checklist Item | What to Check | Input Type | Image | Marks |
 |-----|----------|----------------|---------------|-----------|-------|-------|
-| 1 | Visual Merchandising | Storefront condition & branding consistency | The storefront, entrance and external signage are clean… | YN | Y | 3 |
-| 2 | Visual Merchandising | Window displays and Promotional Displays | Window glass and displays are clean and free of dust… | YN | Y | *(empty)* |
-| … | … | … | … | … | … | … |
-| 6 | Customer Experience | Warranty and installation implications | The team member clearly explains applicable warranty… | YN | N | 5 |
+| 1 | Visual Merchandising | Storefront condition & branding consistency | The storefront, entrance and external signage are clean, undamaged and free of litter… | YN | Y | *(empty)* |
+| 2 | Visual Merchandising | Window displays and Floorworld Promotional Displays | Window glass and displays are clean and free of dust, residue, damage and clutter… | YN | Y | *(empty)* |
+| 3 | Visual Merchandising | Accessibility (parking, entry points, etc.) | The store can be entered safely and without obstruction… | YN | Y | *(empty)* |
+| 4 | Visual Merchandising | Renovator | The Renovator customer category is visibly represented… | YN | Y | *(empty)* |
+| 5 | Customer Experience | Technical attributes (wear layer, AC rating, water resistance) | The team member accurately explains the relevant technical attributes… | YN | Y | *(empty)* |
+| 6 | Customer Experience | Warranty and installation implications | The team member clearly explains applicable warranty conditions… | YN | N | *(empty)* |
+| 7 | Customer Experience | Booking an in-home quote when in-store | When an in-home measure or quote is appropriate… | YN | N | *(empty)* |
+| 8 | Customer Experience | Accuracy and clarity of quotes | The quote matches the agreed measurements, products, quantities and scope… | YN | Y | *(empty)* |
+
+> **Note on this sample:** In the actual Floorworld sheet above, **every `Marks` cell is empty** — so all eight questions are generated as **unscored** plain Yes/No radios (see §5.2, Case B). A future sheet can populate `Marks` on any row to make that question scored (Case A) without any code change.
 
 ### Column meaning
 
@@ -136,7 +142,7 @@ When `Image = N`, no file upload field is created for that row.
 
 ## 6. Worked example — Floorworld
 
-Given the sample spreadsheet, the generated form is:
+Given the sample spreadsheet (all `Marks` empty → every question unscored, plain Yes/No), the generated form is:
 
 ```
 FORM: "Floorworld Store Audit Checklist"
@@ -151,16 +157,16 @@ PAGE 1 — "Store details"
    • Company Name       (hidden)
 --- page break ---
 PAGE 2 — "Visual Merchandising"
-   1. Storefront condition & branding consistency   (radio yes-no-toggle, required) + File Upload
-   2. Window displays and Promotional Displays      (radio yes-no-toggle, required) + File Upload
-   3. Accessibility (parking, entry points, etc.)   (radio yes-no-toggle, required) + File Upload
-   4. Renovator                                     (radio yes-no-toggle, required) + File Upload
+   1. Storefront condition & branding consistency          (radio yes-no-toggle, required, unscored) + File Upload
+   2. Window displays and Floorworld Promotional Displays  (radio yes-no-toggle, required, unscored) + File Upload
+   3. Accessibility (parking, entry points, etc.)          (radio yes-no-toggle, required, unscored) + File Upload
+   4. Renovator                                            (radio yes-no-toggle, required, unscored) + File Upload
 --- page break ---
 PAGE 3 — "Customer Experience"
-   5. Technical attributes (wear layer, AC rating…) (radio yes-no-toggle, required) + File Upload
-   6. Warranty and installation implications        (radio yes-no-toggle, required)   [no image]
-   7. Booking an in-home quote when in-store         (radio yes-no-toggle, required)   [no image]
-   8. Accuracy and clarity of quotes                 (radio yes-no-toggle, required) + File Upload
+   5. Technical attributes (wear layer, AC rating…)        (radio yes-no-toggle, required, unscored) + File Upload
+   6. Warranty and installation implications               (radio yes-no-toggle, required, unscored)   [no image]
+   7. Booking an in-home quote when in-store                (radio yes-no-toggle, required, unscored)   [no image]
+   8. Accuracy and clarity of quotes                        (radio yes-no-toggle, required, unscored) + File Upload
 ```
 
 ---
