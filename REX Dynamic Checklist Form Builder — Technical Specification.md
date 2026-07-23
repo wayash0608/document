@@ -18,54 +18,90 @@ This document specifies **Phase 1: the Excel → Gravity Form generator** — an
 
 ## 2. Excel file format
 
-The admin-supplied spreadsheet has these columns:
+The admin-supplied spreadsheet is **Type-driven**: fixed columns A–F, then the columns *after* `Type` hold that type's choices and marks.
 
-| No. | Category | Checklist Item | What to Check | Input Type | Image | Marks |
-|-----|----------|----------------|---------------|-----------|-------|-------|
-| 1 | Visual Merchandising | Storefront condition & branding consistency | The storefront, entrance and external signage are clean, undamaged and free of litter… | YN | Y | *(empty)* |
-| 2 | Visual Merchandising | Window displays and Floorworld Promotional Displays | Window glass and displays are clean and free of dust, residue, damage and clutter… | YN | Y | *(empty)* |
-| 3 | Visual Merchandising | Accessibility (parking, entry points, etc.) | The store can be entered safely and without obstruction… | YN | Y | *(empty)* |
-| 4 | Visual Merchandising | Renovator | The Renovator customer category is visibly represented… | YN | Y | *(empty)* |
-| 5 | Customer Experience | Technical attributes (wear layer, AC rating, water resistance) | The team member accurately explains the relevant technical attributes… | YN | Y | *(empty)* |
-| 6 | Customer Experience | Warranty and installation implications | The team member clearly explains applicable warranty conditions… | YN | N | *(empty)* |
-| 7 | Customer Experience | Booking an in-home quote when in-store | When an in-home measure or quote is appropriate… | YN | N | *(empty)* |
-| 8 | Customer Experience | Accuracy and clarity of quotes | The quote matches the agreed measurements, products, quantities and scope… | YN | Y | *(empty)* |
+### Fixed columns
 
-> **Note on this sample:** In the actual Floorworld sheet above, **every `Marks` cell is empty** — so all eight questions are generated as **unscored** plain Yes/No radios (see §5.2, Case B). A future sheet can populate `Marks` on any row to make that question scored (Case A) without any code change.
+| Col | Header | Meaning | Maps to |
+|-----|--------|---------|---------|
+| A | **Ref** | Display order (informational) | Field order |
+| B | **Category** | Groups items; each category = one page | Page title |
+| C | **Checklist Item** | The question / instruction | Field **label** (or read-only text for `None`) |
+| D | **Image Y/N** | `Y` = add an **optional** file upload after the item | `fileupload` |
+| E | **Comment** | `Y` = add an **optional** "Comments" text box | `textarea` |
+| F | **Type** | Decides the field type (see §2.1) | field type |
+| G… | *(no header)* | Choices + marks for that Type | choice `value` encoding |
 
-### Column meaning
+### 2.1 Type column → field built
 
-| Column | Meaning | Maps to |
-|--------|---------|---------|
-| **No.** | Display order (informational) | Field order within page |
-| **Category** | Groups questions; each category becomes its own page | Page title / section |
-| **Checklist Item** | The question | Field **label** |
-| **What to Check** | Guidance text shown under the question | Field **description** |
-| **Input Type** | `YN` = Yes/No radio | Gravity Forms `radio` field |
-| **Image** | `Y` = attach a file upload after the question; `N` = none | Gravity Forms `fileupload` field |
-| **Marks** | The score for a **Yes** answer. **Empty = unscored** (no marks assigned to that question). | Radio choice `value` encoding |
+| Type | Trailing columns | GF field | Style | Scored |
+|------|------------------|----------|-------|--------|
+| `Yes No` | `Yes, mark, No, mark` | `radio` (2) | `yes-no-toggle` (buttons) | Yes |
+| `True False` | `True, mark, False, mark` | `radio` (2) | `yes-no-toggle` (buttons) | Yes |
+| `Radio Buttons` | `Label, mark` repeated (2+) | `radio` | normal radio | Yes |
+| `Manual Score` | `Maximum, N` | `number` (0–N) | — | Yes |
+| `Short Text` | *(none)* | `text` | — | No |
+| `None` | *(none)* | read-only text (no answer field) | — | No |
+
+Marks live **next to each choice** and vary per row. The builder reads label/mark pairs across the trailing columns, so 2, 3 or more options are handled automatically.
+
+> **`Yes No` vs `True False` vs `Radio Buttons`:** all three are single-choice radios — the difference is **cosmetic only**. `Yes No` and `True False` render as large tap-friendly **buttons** (`yes-no-toggle`); `Radio Buttons` renders as standard radio circles. Same scoring behaviour for all.
+
+### Sample (new format)
+
+| Ref | Category | Checklist Item | Image | Comment | Type | Choices / marks |
+|-----|----------|----------------|-------|---------|------|-----------------|
+| 1 | Supplier & Purchasing | Undertake a deep dive in the supplier sales… | N | Y | Radio Buttons | Complete 10, Incomplete 0, In Progress 5 |
+| 2 | Supplier & Purchasing | Introduce preferred supplier to replace non-preferred products | N | N | None | — |
+| 3 | Supplier & Purchasing | What range/s are missing in their store? | N | Y | Manual Score | Maximum 5 |
+| 7 | Product & Merchandising | Implement product rationalisation… | N | Y | Yes No | Yes 5, No 0 |
+| 10 | Systems & Support | Ensure stores signed up to Intranet, HR central… | N | Y | Short Text | — |
+| 17 | Supplier & Purchasing | Follow up product or supplier issues… | N | N | Yes No | Yes 5, No 0 |
+
+> **Note:** `Category` values repeat non-contiguously (e.g. `Supplier & Purchasing` at Ref 1–5 **and** Ref 17). See §5.1 — rows are **grouped by category** so each category is a single page.
 
 ---
 
-## 3. Admin UI — settings asked at the top (not from Excel)
+## 3. Admin UI — what the admin enters
 
-Before/alongside the upload, the admin provides:
+The admin (RDG only) enters **just two things**:
 
-| Setting | Gravity Forms property | Example |
-|---------|------------------------|---------|
-| Form name | `form.title` | `Floorworld Store Audit Checklist` |
-| Required indicator = asterisk | `form.requiredIndicator = 'asterisk'` | — |
-| Require user to be logged in | `form.requireLogin = true` | — |
-| Login message (HTML) | `form.requireLoginMessage` | see below |
-| CSS Class Name | `form.cssClass` | `floorworld-store-audit-checklist` |
+1. **Checklist name** (e.g. `Demo Store Compliance`)
+2. **Excel file**
 
-**Login message HTML** (stored verbatim in `requireLoginMessage`):
+Everything else is **generated automatically** from the checklist name — the admin never touches HTML or CSS.
+
+### Auto-generated from the checklist name
+
+Let `slug = sanitize_title(name)` (e.g. `Demo Store Compliance` → `demo-store-compliance`).
+
+| Setting | Gravity Forms property | Rule | Example |
+|---------|------------------------|------|---------|
+| Form title | `form.title` | = name as typed | `Demo Store Compliance` |
+| CSS Class Name | `form.cssClass` | `slug + "-checklist-report"` | `demo-store-compliance-checklist-report` |
+| Required indicator | `form.requiredIndicator` | fixed | `asterisk` |
+| Require login | `form.requireLogin` | fixed | `true` (always) |
+| Login message (HTML) | `form.requireLoginMessage` | auto-built (see below) | — |
+| Animated transitions | `form.enableAnimation` | fixed | `true` (On) |
+| Spam honeypot | `form.enableHoneypot` | fixed | `true` |
+| Honeypot action | `form.honeypotAction` | fixed | `abort` (do **not** create an entry) |
+| Default confirmation | confirmation message | auto-built (see below) | — |
+
+### Auto-built login message
+
+The redirect URL is derived from the current site + `slug + "-checklist"` (so it works per client / environment — no hardcoded domain):
 
 ```html
 <div class="alert bg-info-subtle border border-1 border-info m-5 p-5 rounded-3">
-  Please <a href="https://demo.rdgrx.com.au/wp-login.php?itsec-hb-token=panel&redirect_to=https%3A%2F%2Fdemo.rdgrx.com.au%2Fdfloorworld-store-audit-checklist%2F">log in</a> to fill this checklist.
+  Please <a href="{site}/wp-login.php?itsec-hb-token=panel&redirect_to={urlencode(site + '/' + slug + '-checklist/')}">log in</a> to fill this checklist.
 </div>
 ```
+
+For `Demo Store Compliance` on `demo.rdgrx.com.au` this produces the redirect `…/demo-store-compliance-checklist/`.
+
+### Auto-built confirmation message
+
+> Thank you for filling out the "**{Checklist name}**". To download the report, use the View Report button on the Dashboard.
 
 ---
 
@@ -77,96 +113,90 @@ This page is **always generated identically**, before any Excel content. It is N
 
 | Field | GF Type | Settings |
 |-------|---------|----------|
-| Store | `select` | `cssClass = 'populate-locations'`, required. Populated at render time by the existing `gform_pre_render` store-dropdown hook. |
-| Store Owner Name | `hidden` | Placeholder for now (may be auto-filled later from the selected store's location record). |
-| Company Name | `hidden` | Placeholder for now. |
+| Store | `select` | `cssClass = 'populate-locations'`, **required**. Populated at render time by the existing `gform_pre_render` store-dropdown hook. |
+| Store Owner Name | `hidden` | **Not required.** Placeholder for now (may be auto-filled later from the selected store's location record). |
+| Company Name | `hidden` | **Not required.** Placeholder for now. |
 
-A **page break** follows this page.
+A **page break** follows this page. The **first Excel category begins on Page 2**.
 
 ---
 
 ## 5. Excel content → form structure
 
-### 5.1 Paging rule
-- Rows are **grouped by `Category`**, preserving Excel order.
-- **Each Category becomes its own page.** A page break is inserted between categories.
-- The page title = the Category name.
+### 5.1 Paging rule (group by category — Option A)
+- Rows are **grouped by `Category`**. All rows sharing a category go on **one page**, ordered by the category's **first appearance** in the sheet.
+- Because categories repeat non-contiguously (e.g. Ref 17 is `Supplier & Purchasing` again), grouping means Ref 17 joins Ref 1–5 on the same page. This reorders items but avoids duplicate category pages.
+- **Page title = Category name.** The first category is **Page 2** (Page 1 is the fixed "Store details").
 
 ### 5.2 Per-row field mapping
 
-For every spreadsheet row, generate a **radio field**, and (if `Image = Y`) a **file upload field** directly after it.
+Each row builds a **main field** based on `Type`, plus (optionally) a file upload and a comments box.
 
-#### Radio field (Input Type = `YN`)
+#### Main field by Type
 
-| Property | Value |
-|----------|-------|
-| `type` | `radio` |
-| `label` | `Checklist Item` (column 3) |
-| `description` | `What to Check` (column 4) |
-| `cssClass` | `yes-no-toggle` |
-| `isRequired` | `true` |
-| `choices` | see encoding below |
+**`Yes No`** — radio, `cssClass = yes-no-toggle`, required
 
-**Choice encoding — driven by the `Marks` column (NOT hardcoded):**
+| Choice | value |
+|--------|-------|
+| Yes | `yes-{mark}` (e.g. `yes-5`) |
+| No | `no-{mark}` (e.g. `no-0`) |
 
-The mark for a **Yes** answer comes from the spreadsheet's `Marks` column. It is never entered by hand in the builder.
+**`True False`** — identical to `Yes No` (button styling, `yes-no-toggle`, required). Values `true-{mark}` / `false-{mark}`.
 
-**Case A — `Marks` has a value (e.g. `3`):**
+**`Radio Buttons`** — radio, **normal styling**, required. One choice per label/mark pair:
 
-| Choice text | `value` | Score |
-|-------------|---------|-------|
-| Yes | `b-{Marks}` (e.g. `b-3`) | value of `Marks` |
-| No | `a-0` | 0 |
+| Choice | value |
+|--------|-------|
+| Complete | `complete-10` |
+| Incomplete | `incomplete-0` |
+| In Progress | `in-progress-5` |
 
-**Case B — `Marks` is empty → unscored question:**
+> Value = `slug(label) + "-" + mark`. The scoring engine reads the number **after the last dash** as the score. Works for any number of options.
 
-| Choice text | `value` | Score |
-|-------------|---------|-------|
-| Yes | `Yes` | — (not scored) |
-| No | `No` | — (not scored) |
+**`Manual Score`** — `number` field, required
+- `min = 0`, `max = Maximum` (whole numbers). The number entered **is** the score.
 
-> When a mark is present, the number after the dash is the **score**, and the `a-` / `b-` prefixes keep a stable sort order. A generic scoring engine reads the value, splits on `-`, and totals the numeric part — no per-client code required. When `Marks` is empty, plain `Yes` / `No` values are used and the question is excluded from scoring totals.
+**`Short Text`** — `text` field, optional. Unscored.
 
-#### File upload field (only when Image = `Y`)
+**`None`** — read-only text only (GF `html` block showing the Checklist Item). No answer field, unscored.
 
-| Property | Value |
-|----------|-------|
-| `type` | `fileupload` |
-| `label` | **(empty — label removed)** |
-| `labelPlacement` / visibility | Label hidden |
-| Association | Belongs to the question immediately above it |
+#### Optional extras (any Type)
+- **`Image = Y`** → `fileupload` after the item, **label removed**, **optional** (not required).
+- **`Comment = Y`** → `textarea` labelled "Comments", optional.
 
-When `Image = N`, no file upload field is created for that row.
+### 5.3 Scoring model
+- Item **max** = highest mark among its choices (`Yes No` / `Radio Buttons`) or `Maximum` (`Manual Score`).
+- Item **earned** = mark of the selected choice, or the number typed.
+- `Short Text` / `None` are excluded from totals.
+- Report % = Σ earned ÷ Σ max.
 
 ---
 
-## 6. Worked example — Floorworld
+## 6. Worked example — grouped by category
 
-Given the sample spreadsheet (all `Marks` empty → every question unscored, plain Yes/No), the generated form is:
+Using the new sample sheet (grouped by category, Option A), the pages are:
 
 ```
-FORM: "Floorworld Store Audit Checklist"
-  requiredIndicator: asterisk
-  requireLogin: true
-  requireLoginMessage: <div class="alert …">Please log in…</div>
-  cssClass: floorworld-store-audit-checklist
-
 PAGE 1 — "Store details"
    • Store              (select, populate-locations, required)
-   • Store Owner Name   (hidden)
-   • Company Name       (hidden)
+   • Store Owner Name   (hidden, not required)
+   • Company Name       (hidden, not required)
 --- page break ---
-PAGE 2 — "Visual Merchandising"
-   1. Storefront condition & branding consistency          (radio yes-no-toggle, required, unscored) + File Upload
-   2. Window displays and Floorworld Promotional Displays  (radio yes-no-toggle, required, unscored) + File Upload
-   3. Accessibility (parking, entry points, etc.)          (radio yes-no-toggle, required, unscored) + File Upload
-   4. Renovator                                            (radio yes-no-toggle, required, unscored) + File Upload
+PAGE 2 — "Supplier & Purchasing"        (Ref 1–5 + Ref 17 grouped here)
+   1  Radio Buttons (Complete 10 / Incomplete 0 / In Progress 5)   + Comments
+   2  None (read-only text)
+   3  Manual Score (0–5)                                           + Comments
+   4  Manual Score (0–5)                                           + Comments
+   5  Radio Buttons (Complete 5 / Incomplete 0 / In Progress 2)
+   17 Yes No (Yes 5 / No 0)
 --- page break ---
-PAGE 3 — "Customer Experience"
-   5. Technical attributes (wear layer, AC rating…)        (radio yes-no-toggle, required, unscored) + File Upload
-   6. Warranty and installation implications               (radio yes-no-toggle, required, unscored)   [no image]
-   7. Booking an in-home quote when in-store                (radio yes-no-toggle, required, unscored)   [no image]
-   8. Accuracy and clarity of quotes                        (radio yes-no-toggle, required, unscored) + File Upload
+PAGE 3 — "Product & Merchandising"      (Ref 6–7)
+   6  Radio Buttons (Complete 5 / Incomplete 0 / In Progress 2)   + Image + Comments
+   7  Yes No (Yes 5 / No 0)                                       + Comments
+--- page break ---
+… one page per remaining category (Showroom & Brand Standards, Systems & Support,
+   Marketing & Comms, Visit Actions & Follow-Up, Customer Experience & After-Sales,
+   Store & Business Operations, Product Care) …
 ```
 
 ---
@@ -211,42 +241,78 @@ The builder assembles a `$form` array and calls `GFAPI::add_form($form)`. Illust
 ```
 > The page **title** (e.g. "Store details", "Visual Merchandising") is set via the page field's `nextButton`/`cssClass` conventions or a Section field at the top of each page, depending on the chosen GF rendering approach.
 
-### Radio question — with a mark (`Marks = 3`)
+### Radio question — `Yes No` type
 ```json
 {
   "type": "radio",
-  "label": "Storefront condition & branding consistency",
-  "description": "The storefront, entrance and external signage are clean…",
+  "label": "Implement product rationalisation and/or updates initiated by the PMC",
   "cssClass": "yes-no-toggle",
   "isRequired": true,
   "choices": [
-    { "text": "Yes", "value": "b-3" },
-    { "text": "No",  "value": "a-0" }
+    { "text": "Yes", "value": "yes-5" },
+    { "text": "No",  "value": "no-0" }
   ]
 }
 ```
 
-### Radio question — no mark (`Marks` empty, unscored)
+### Radio question — `Radio Buttons` type (multi-option, normal styling)
 ```json
 {
   "type": "radio",
-  "label": "Window displays and Promotional Displays",
-  "description": "Window glass and displays are clean and free of dust…",
-  "cssClass": "yes-no-toggle",
+  "label": "Undertake a deep dive in the supplier sales…",
   "isRequired": true,
   "choices": [
-    { "text": "Yes", "value": "Yes" },
-    { "text": "No",  "value": "No"  }
+    { "text": "Complete",    "value": "complete-10" },
+    { "text": "Incomplete",  "value": "incomplete-0" },
+    { "text": "In Progress", "value": "in-progress-5" }
   ]
 }
 ```
 
-### File upload (only when Image = Y, label removed)
+### Manual Score — `number` (0–Maximum)
+```json
+{
+  "type": "number",
+  "label": "What range/s are missing in their store?",
+  "isRequired": true,
+  "rangeMin": 0,
+  "rangeMax": 5
+}
+```
+
+### Short Text — `text` (optional, unscored)
+```json
+{
+  "type": "text",
+  "label": "What cleaning products do you use for your hard / resilient flooring",
+  "isRequired": false
+}
+```
+
+### None — read-only text (`html`)
+```json
+{
+  "type": "html",
+  "label": "",
+  "content": "<p>Introduce preferred supplier to replace non preferred products</p>"
+}
+```
+
+### Optional file upload (Image = Y, label removed, optional)
 ```json
 {
   "type": "fileupload",
   "label": "",
   "labelPlacement": "hidden_label",
+  "isRequired": false
+}
+```
+
+### Optional comments (Comment = Y)
+```json
+{
+  "type": "textarea",
+  "label": "Comments",
   "isRequired": false
 }
 ```
@@ -258,7 +324,7 @@ The builder assembles a `$form` array and calls `GFAPI::add_form($form)`. Illust
 ## 8. Build algorithm (pseudocode)
 
 ```
-read settings (name, login flag, login message, css class)
+read settings (checklist name)          # css class, login msg, confirmation auto-generated
 read spreadsheet rows
 
 fields = []
@@ -266,39 +332,41 @@ fields = []
 # --- Fixed page 1 ---
 fields += SectionTitle("Store details")
 fields += Select("Store", cssClass="populate-locations", required=true)
-fields += Hidden("Store Owner Name")
-fields += Hidden("Company Name")
-fields += PageBreak()
+fields += Hidden("Store Owner Name", required=false)
+fields += Hidden("Company Name",     required=false)
 
-# --- Excel content ---
-currentCategory = null
-foreach row in rows:
-    if row.Category != currentCategory:
-        if currentCategory != null:
-            fields += PageBreak()
-        fields += SectionTitle(row.Category)
-        currentCategory = row.Category
+# --- Group rows by category (Option A), ordered by first appearance ---
+categories = ordered unique row.Category
+foreach category in categories:
+    fields += PageBreak()
+    fields += SectionTitle(category)
 
-    if row.InputType == "YN":
-        if row.Marks is not empty:
-            choices = [ {Yes, "b-" + row.Marks}, {No, "a-0"} ]   # scored
-        else:
-            choices = [ {Yes, "Yes"}, {No, "No"} ]               # unscored
+    foreach row where row.Category == category:
+        switch row.Type:
+            case "Yes No":
+                choices = [ {Yes, "yes-" + yesMark}, {No, "no-" + noMark} ]
+                fields += Radio(row.Item, cssClass="yes-no-toggle", required=true, choices)
+            case "True False":
+                choices = [ {True, "true-" + trueMark}, {False, "false-" + falseMark} ]
+                fields += Radio(row.Item, cssClass="yes-no-toggle", required=true, choices)
+            case "Radio Buttons":
+                choices = for each (label, mark) pair: { label, slug(label)+"-"+mark }
+                fields += Radio(row.Item, required=true, choices)      # normal styling
+            case "Manual Score":
+                fields += Number(row.Item, required=true, min=0, max=Maximum)
+            case "Short Text":
+                fields += Text(row.Item, required=false)
+            case "None":
+                fields += HtmlBlock(row.Item)                          # read-only text
 
-        fields += Radio(
-            label       = row.ChecklistItem,
-            description  = row.WhatToCheck,
-            cssClass     = "yes-no-toggle",
-            required     = true,
-            choices      = choices
-        )
+        if row.Image == "Y":
+            fields += FileUpload(label="", required=false)             # optional
+        if row.Comment == "Y":
+            fields += Textarea(label="Comments", required=false)
 
-    if row.Image == "Y":
-        fields += FileUpload(label="")   # label removed
-
-form = FormEnvelope(settings, fields)
+form = FormEnvelope(GetAutoFormSettings(name), fields)
 form_id = GFAPI::add_form(form)
-reload form  ->  capture field IDs  ->  save question map
+reload form -> capture field IDs -> save question map
 ```
 
 ---
@@ -307,15 +375,26 @@ reload form  ->  capture field IDs  ->  save question map
 
 | # | Decision | Value |
 |---|----------|-------|
-| 1 | Yes score value | `b-{Marks}` — mark read from the `Marks` column (e.g. `b-3`) |
-| 2 | No score value | `a-0` |
-| 2a | `Marks` column empty | Unscored question — choices use plain `Yes` / `No` values, excluded from totals |
-| 3 | Radio CSS class | `yes-no-toggle` |
-| 4 | Radio required | Yes (asterisk) |
-| 5 | Image = Y | File upload field, **label removed** |
-| 6 | Image = N | No file upload field |
-| 7 | First page | Fixed "Store details" (Store dropdown + 2 hidden fields) |
-| 8 | Paging | One page per Category, page break between categories |
+| 1 | Field type source | `Type` column (Yes No / True False / Radio Buttons / Manual Score / Short Text / None) |
+| 2 | Marks source | Per-choice, in columns after `Type` (varies per row) |
+| 3 | Choice value encoding | `slug(label) + "-" + mark` (e.g. `complete-10`, `yes-5`); score = number after last dash |
+| 4 | `Yes No` / `True False` styling | `yes-no-toggle` (buttons — mobile-friendly); cosmetic only |
+| 5 | `Radio Buttons` styling | Normal radio (any option count) |
+| 6 | `Manual Score` | `number`, min 0, max = `Maximum` (whole numbers) |
+| 7 | `Short Text` | `text`, optional, unscored |
+| 8 | `None` | Read-only text only (no answer field), unscored |
+| 9 | Scored fields required | Yes (asterisk) |
+| 10 | Image = Y | Optional file upload, label removed |
+| 11 | Comment = Y | Optional "Comments" textarea |
+| 12 | Paging | Group by Category (Option A); first category = Page 2 |
+| 13 | Page 1 | "Store details": Store (required) + 2 hidden (not required) |
+| 14 | CSS class | Auto: `slug(name) + "-checklist-report"` |
+| 15 | Require login | Always true |
+| 16 | Login message | Auto HTML, redirect from site + `slug + "-checklist"` |
+| 17 | Required indicator | `asterisk` |
+| 18 | Animated transitions | On |
+| 19 | Honeypot spam action | `abort` (do not create entry) |
+| 20 | Default confirmation | `Thank you for filling out the "{name}". To download the report, use the View Report button on the Dashboard.` |
 
 ---
 
@@ -323,5 +402,5 @@ reload form  ->  capture field IDs  ->  save question map
 
 - **Store Owner Name / Company Name** — decide whether these are auto-populated from the selected store's `rdg-location` record, or remain blank placeholders.
 - **File upload constraints** — max size / allowed types per existing checklist limits (`RDG_CHECKLISTS_MAX_IMAGE_SIZE_MB`, etc.).
-- **Processing phase** — a generic engine that reads the `b-3` / `a-0` values to score submissions, generate the PDF/email, and drive the report page (removes the need for a per-client PHP class).
+- **Processing phase** — a generic engine that reads the `slug(label)-mark` values (score = number after the last dash) to score submissions, generate the PDF/email, and drive the report page (removes the need for a per-client PHP class).
 - **Datasource auto-creation** — after form creation, auto-create/link the `rdg-data-sources` record (form ID, report page, SMTP key, transient prefix) so the checklist is wired up with no code.
