@@ -20,12 +20,12 @@ This document specifies **Phase 1: the Excel → Gravity Form generator** — an
 
 The admin-supplied spreadsheet has these columns:
 
-| No. | Category | Checklist Item | What to Check | Input Type | Image |
-|-----|----------|----------------|---------------|-----------|-------|
-| 1 | Visual Merchandising | Storefront condition & branding consistency | The storefront, entrance and external signage are clean… | YN | Y |
-| 2 | Visual Merchandising | Window displays and Promotional Displays | Window glass and displays are clean and free of dust… | YN | Y |
-| … | … | … | … | … | … |
-| 6 | Customer Experience | Warranty and installation implications | The team member clearly explains applicable warranty… | YN | N |
+| No. | Category | Checklist Item | What to Check | Input Type | Image | Marks |
+|-----|----------|----------------|---------------|-----------|-------|-------|
+| 1 | Visual Merchandising | Storefront condition & branding consistency | The storefront, entrance and external signage are clean… | YN | Y | 3 |
+| 2 | Visual Merchandising | Window displays and Promotional Displays | Window glass and displays are clean and free of dust… | YN | Y | *(empty)* |
+| … | … | … | … | … | … | … |
+| 6 | Customer Experience | Warranty and installation implications | The team member clearly explains applicable warranty… | YN | N | 5 |
 
 ### Column meaning
 
@@ -37,6 +37,7 @@ The admin-supplied spreadsheet has these columns:
 | **What to Check** | Guidance text shown under the question | Field **description** |
 | **Input Type** | `YN` = Yes/No radio | Gravity Forms `radio` field |
 | **Image** | `Y` = attach a file upload after the question; `N` = none | Gravity Forms `fileupload` field |
+| **Marks** | The score for a **Yes** answer. **Empty = unscored** (no marks assigned to that question). | Radio choice `value` encoding |
 
 ---
 
@@ -100,14 +101,25 @@ For every spreadsheet row, generate a **radio field**, and (if `Image = Y`) a **
 | `isRequired` | `true` |
 | `choices` | see encoding below |
 
-**Choice encoding (scoring baked into the value):**
+**Choice encoding — driven by the `Marks` column (NOT hardcoded):**
+
+The mark for a **Yes** answer comes from the spreadsheet's `Marks` column. It is never entered by hand in the builder.
+
+**Case A — `Marks` has a value (e.g. `3`):**
 
 | Choice text | `value` | Score |
 |-------------|---------|-------|
-| Yes | `b-3` | 3 |
+| Yes | `b-{Marks}` (e.g. `b-3`) | value of `Marks` |
 | No | `a-0` | 0 |
 
-> The number after the dash is the **score**. The `a-` / `b-` prefixes keep a stable sort order. A generic scoring engine reads the value, splits on `-`, and totals the numeric part — no per-client code required.
+**Case B — `Marks` is empty → unscored question:**
+
+| Choice text | `value` | Score |
+|-------------|---------|-------|
+| Yes | `Yes` | — (not scored) |
+| No | `No` | — (not scored) |
+
+> When a mark is present, the number after the dash is the **score**, and the `a-` / `b-` prefixes keep a stable sort order. A generic scoring engine reads the value, splits on `-`, and totals the numeric part — no per-client code required. When `Marks` is empty, plain `Yes` / `No` values are used and the question is excluded from scoring totals.
 
 #### File upload field (only when Image = `Y`)
 
@@ -193,7 +205,7 @@ The builder assembles a `$form` array and calls `GFAPI::add_form($form)`. Illust
 ```
 > The page **title** (e.g. "Store details", "Visual Merchandising") is set via the page field's `nextButton`/`cssClass` conventions or a Section field at the top of each page, depending on the chosen GF rendering approach.
 
-### Radio question
+### Radio question — with a mark (`Marks = 3`)
 ```json
 {
   "type": "radio",
@@ -204,6 +216,21 @@ The builder assembles a `$form` array and calls `GFAPI::add_form($form)`. Illust
   "choices": [
     { "text": "Yes", "value": "b-3" },
     { "text": "No",  "value": "a-0" }
+  ]
+}
+```
+
+### Radio question — no mark (`Marks` empty, unscored)
+```json
+{
+  "type": "radio",
+  "label": "Window displays and Promotional Displays",
+  "description": "Window glass and displays are clean and free of dust…",
+  "cssClass": "yes-no-toggle",
+  "isRequired": true,
+  "choices": [
+    { "text": "Yes", "value": "Yes" },
+    { "text": "No",  "value": "No"  }
   ]
 }
 ```
@@ -247,12 +274,17 @@ foreach row in rows:
         currentCategory = row.Category
 
     if row.InputType == "YN":
+        if row.Marks is not empty:
+            choices = [ {Yes, "b-" + row.Marks}, {No, "a-0"} ]   # scored
+        else:
+            choices = [ {Yes, "Yes"}, {No, "No"} ]               # unscored
+
         fields += Radio(
             label       = row.ChecklistItem,
             description  = row.WhatToCheck,
             cssClass     = "yes-no-toggle",
             required     = true,
-            choices      = [ {Yes, "b-3"}, {No, "a-0"} ]
+            choices      = choices
         )
 
     if row.Image == "Y":
@@ -269,8 +301,9 @@ reload form  ->  capture field IDs  ->  save question map
 
 | # | Decision | Value |
 |---|----------|-------|
-| 1 | Yes score value | `b-3` |
+| 1 | Yes score value | `b-{Marks}` — mark read from the `Marks` column (e.g. `b-3`) |
 | 2 | No score value | `a-0` |
+| 2a | `Marks` column empty | Unscored question — choices use plain `Yes` / `No` values, excluded from totals |
 | 3 | Radio CSS class | `yes-no-toggle` |
 | 4 | Radio required | Yes (asterisk) |
 | 5 | Image = Y | File upload field, **label removed** |
