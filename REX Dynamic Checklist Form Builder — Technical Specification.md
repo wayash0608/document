@@ -27,10 +27,13 @@ The admin-supplied spreadsheet is **Type-driven**: fixed columns A–F, then the
 | A | **Ref** | Display order (informational) | Field order |
 | B | **Category** | Groups items; each category = one page | Page title |
 | C | **Checklist Item** | The question / instruction | Field **label** (or read-only text for `None`) |
+| — | **How to check** *(optional)* | Extra guidance for the item; may be blank or absent, and can appear on any row | Field **description** |
 | D | **Image Y/N** | `Y` = add an **optional** file upload after the item | `fileupload` |
 | E | **Comment** | `Y` = add an **optional** "Comments" text box | `textarea` |
 | F | **Type** | Decides the field type (see §2.1) | field type |
 | G… | *(no header)* | Choices + marks for that Type | choice `value` encoding |
+
+> **Columns are matched by header name** (not fixed position), so an optional **How to check** column is handled wherever it appears — present or absent, filled or blank. When filled, its text becomes the field's description; for a `None` item it is shown as extra read-only text.
 
 ### 2.1 Type column → field built
 
@@ -407,6 +410,7 @@ reload form -> capture field IDs -> save question map
 | 22 | Image field limits | Optional, max 5 MB, images only (`jpg,jpeg,png,gif`) |
 | 23 | Field visibility | Inputs `visible`; page-1 hidden fields `hidden` |
 | 24 | Access | RDG admin only (`manage_options`), nonce-protected |
+| 25 | How to check (optional) | Optional per-row description; shown as field description or extra read-only text for `None` items |
 
 ---
 
@@ -428,6 +432,7 @@ reload form -> capture field IDs -> save question map
 - Security: nonce + capability check; inputs sanitised; output escaped; graceful errors.
 - **Duplicate-name validation** against existing Gravity Form titles (active + inactive).
 - Header auto-detected (falls back to A–F); rows grouped by category; fields per `Type`; choice values `slug(label)-mark`.
+- **Optional 'How to check' column** (present/absent, filled/blank, flexible position) — text becomes field description or extra read-only text for `None` items.
 - Field visibility explicit (inputs `visible`; page-1 Store Owner/Company `hidden`).
 - Image fields optional, 5 MB max, images only.
 - Creates the form via `GFAPI::add_form()`.
